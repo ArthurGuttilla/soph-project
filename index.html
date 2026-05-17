@@ -233,6 +233,22 @@
   <div id="loadLabel">Preparing scene</div>
 </div>
 
+<!--
+  Importmap is used only when the source HTML is served directly
+  (e.g. GitHub Pages set to "Deploy from a branch"). When Vite builds,
+  the generated dist/index.html replaces the script src with a bundled
+  asset and the imports are already resolved inline, so the importmap
+  is a harmless no-op.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
+    "postprocessing": "https://esm.sh/postprocessing@6.39.1?deps=three@0.170.0&external=three"
+  }
+}
+</script>
 <script type="module" src="./viewer/js/main.js"></script>
 </body>
 </html>

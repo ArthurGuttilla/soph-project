@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
 /**
  * Build a Hosek-Wilkie atmospheric Sky and a directional light placed

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 /**
  * Centralised asset loader with a single LoadingManager so the start
