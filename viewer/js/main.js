@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   EffectComposer, RenderPass, EffectPass,
-  BloomEffect, SMAAEffect, SSAOEffect, VignetteEffect,
-  NormalPass, DepthDownsamplingPass, KernelSize, BlendFunction,
+  BloomEffect, SMAAEffect, VignetteEffect,
+  KernelSize,
 } from 'postprocessing';
 import { makeMaterials } from './materials.js';
 import { buildUnderground, buildGround, attachWaterFeatures, LAYOUT } from './geometry.js';
@@ -12,23 +12,35 @@ import { manager, loadHDR, loadDataTexture, onProgress } from './assets.js';
 import { buildSky } from './sky.js';
 
 // ---------- Loader UI ----------
+const startScreen = document.getElementById('startScreen');
 const ctaButton = document.getElementById('ctaButton');
 const loadBarFill = document.querySelector('#loadBar > div');
 const loadLabel = document.getElementById('loadLabel');
 let assetsReady = false;
+function markReady() {
+  if (assetsReady) return;
+  assetsReady = true;
+  loadBarFill.style.width = '100%';
+  loadLabel.textContent = 'Ready';
+  ctaButton.textContent = 'Click to Enter';
+  startScreen.classList.add('ready');
+}
 onProgress((loaded, total, url) => {
   const pct = total > 0 ? (loaded / total) : 0;
   loadBarFill.style.width = `${Math.min(100, pct * 100)}%`;
   const name = url.split('/').pop().split('?')[0];
   loadLabel.textContent = `Loading ${name}`;
 });
-manager.onLoad = () => {
-  assetsReady = true;
-  loadBarFill.style.width = '100%';
-  loadLabel.textContent = 'Ready';
-  ctaButton.textContent = 'Click to Enter';
-};
+manager.onLoad = () => markReady();
 manager.onError = (url) => { console.warn('Failed to load', url); };
+// Safety net: if assets stall (slow network, blocked CDN), let the user
+// enter anyway after 8 s. Procedural fallbacks fill the gaps.
+setTimeout(() => {
+  if (!assetsReady) {
+    console.warn('Asset loading timeout — entering with available assets.');
+    markReady();
+  }
+}, 8000);
 
 // ---------- Renderer ----------
 const app = document.getElementById('app');
@@ -106,33 +118,18 @@ let undergroundGroup, groundGroup, currentLevel = 'underground';
 })();
 
 // ---------- Post-processing ----------
+// Bloom + vignette + SMAA. SSAO was removed because the postprocessing
+// v6.39 NormalPass + DepthDownsamplingPass combo emits GL framebuffer
+// blit errors on some drivers (depth/stencil sharing) that break the
+// whole render pipeline on certain GPUs.
 const composer = new EffectComposer(renderer, {
   frameBufferType: THREE.HalfFloatType,
 });
 composer.addPass(new RenderPass(scene, camera));
 
-const normalPass = new NormalPass(scene, camera);
-const depthDownsamplingPass = new DepthDownsamplingPass({ normalBuffer: normalPass.texture, resolutionScale: 0.5 });
-composer.addPass(normalPass);
-composer.addPass(depthDownsamplingPass);
-
-const ssaoEffect = new SSAOEffect(camera, normalPass.texture, {
-  blendFunction: BlendFunction.MULTIPLY,
-  samples: 16,
-  rings: 4,
-  luminanceInfluence: 0.6,
-  radius: 0.15,
-  bias: 0.04,
-  intensity: 2.0,
-  fade: 0.015,
-  worldDistanceThreshold: 30,
-  worldDistanceFalloff: 5,
-  worldProximityThreshold: 0.4,
-  worldProximityFalloff: 0.1,
-});
 const bloomEffect = new BloomEffect({
-  intensity: 0.6,
-  luminanceThreshold: 0.72,
+  intensity: 0.55,
+  luminanceThreshold: 0.75,
   luminanceSmoothing: 0.2,
   mipmapBlur: true,
   kernelSize: KernelSize.LARGE,
@@ -140,7 +137,6 @@ const bloomEffect = new BloomEffect({
 const vignetteEffect = new VignetteEffect({ offset: 0.35, darkness: 0.55 });
 const smaaEffect = new SMAAEffect();
 
-composer.addPass(new EffectPass(camera, ssaoEffect));
 composer.addPass(new EffectPass(camera, bloomEffect, vignetteEffect, smaaEffect));
 
 // ---------- Level switching ----------
@@ -214,8 +210,7 @@ controller.onInteract = () => {
   if (d < 5.0) spawn(currentLevel === 'underground' ? 'ground' : 'underground');
 };
 
-// Start screen
-const startScreen = document.getElementById('startScreen');
+// Start screen click handler
 startScreen.addEventListener('click', () => {
   if (!assetsReady) return;
   startScreen.classList.add('hidden');

@@ -151,13 +151,18 @@
     text-transform: uppercase;
     background: rgba(255,255,255,0.04);
     backdrop-filter: blur(4px);
-    transition: background 0.25s, border-color 0.25s, transform 0.25s;
+    transition: background 0.25s, border-color 0.25s, transform 0.25s, opacity 0.25s;
+    opacity: 0.55;
   }
-  #startScreen:hover .cta {
+  #startScreen.ready { cursor: pointer; }
+  #startScreen.ready .cta { opacity: 1; }
+  #startScreen.ready:hover .cta {
     background: rgba(255,255,255,0.14);
     border-color: rgba(255,255,255,0.85);
     transform: translateY(-1px);
   }
+  #startScreen:not(.ready) { cursor: progress; }
+  #startScreen:not(.ready) .cta { pointer-events: none; }
   #startScreen.hidden { display: none; }
 
   /* Loading bar shown while assets load */
