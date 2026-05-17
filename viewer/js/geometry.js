@@ -216,22 +216,66 @@ export function buildUnderground(materials) {
   barre.position.set(-22, 1.0, -10);
   group.add(barre);
 
-  // Spa — piscinas (3 pools)
-  [[ -16, 18 ], [ -8, 20 ], [ 0, 17 ]].forEach(([px, pz]) => {
+  // Spa — piscinas (3 pools, organic ellipse shapes)
+  const pools = [
+    { x: -16, z: 18, rx: 2.6, rz: 1.8, rot: 0.2 },
+    { x: -7,  z: 20, rx: 3.0, rz: 2.0, rot: -0.4 },
+    { x: 1,   z: 17, rx: 2.2, rz: 1.6, rot: 0.6 },
+  ];
+  pools.forEach(p => {
     const pool = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.0, 2.0, 0.4, 32),
+      new THREE.CylinderGeometry(1, 1, 0.4, 48),
       materials.water
     );
-    pool.position.set(px, 0.05, pz);
+    pool.scale.set(p.rx, 1, p.rz);
+    pool.rotation.y = p.rot;
+    pool.position.set(p.x, 0.05, p.z);
     group.add(pool);
-    // pool rim
+    // pool rim — flat ring on the floor
     const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(2.0, 0.1, 8, 32),
+      new THREE.RingGeometry(0.95, 1.08, 48),
       materials.curvedConcrete
     );
-    rim.rotation.x = Math.PI / 2;
-    rim.position.set(px, 0.15, pz);
+    rim.scale.set(p.rx, p.rz, 1);
+    rim.rotation.x = -Math.PI / 2;
+    rim.rotation.z = p.rot;
+    rim.position.set(p.x, 0.21, p.z);
     group.add(rim);
+  });
+
+  // Spa — vertical ribbed curtain wall (cluster of slim cylinders, as in Perspective 08)
+  for (let i = 0; i < 22; i++) {
+    const t = i / 22;
+    const cx = -10 + Math.cos(t * Math.PI * 2) * 5.5;
+    const cz = 22 + Math.sin(t * Math.PI * 2) * 1.5;
+    const rib = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 4.0, 12),
+      materials.wallWhite
+    );
+    rib.position.set(cx, 2.0, cz);
+    group.add(rib);
+  }
+
+  // Mushroom columns (white, cylindrical with cap) — present in lounge and across plan
+  const columnPositions = [
+    [-18, -4], [-13,  6], [-3,  -6], [ 8, -8], [ 14,  4],
+    [ 24, -8], [-26, -8], [-2,  10],
+  ];
+  columnPositions.forEach(([cxp, czp]) => {
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.5, H - 0.3, 16),
+      materials.wallWhite
+    );
+    shaft.position.set(cxp, (H - 0.3) / 2, czp);
+    shaft.userData.collidable = true;
+    group.add(shaft);
+    // Flared cap
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.4, 0.5, 0.6, 16),
+      materials.wallWhite
+    );
+    cap.position.set(cxp, H - 0.3, czp);
+    group.add(cap);
   });
 
   // Spa — sauna modules
@@ -277,16 +321,98 @@ export function buildUnderground(materials) {
     group.add(pod);
   });
 
-  // Main Lounge — puffs (sunken seating cylinders)
-  for (let i = 0; i < 6; i++) {
-    const px = -13 + (Math.random() - 0.5) * 10;
-    const pz = (Math.random() - 0.5) * 8;
-    const puff = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 0.7, 0.4, 16),
+  // Main Lounge — sunken oval seating pits (Perspective 06)
+  const pits = [
+    { x: -16, z: -3, rx: 2.2, rz: 1.2 },
+    { x: -10, z:  4, rx: 2.0, rz: 1.3 },
+    { x:  -7, z: -2, rx: 1.6, rz: 1.0 },
+  ];
+  pits.forEach(p => {
+    // Dark inner disk at -0.5 simulating the sunken seat
+    const pit = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 32),
+      new THREE.MeshStandardMaterial({ color: 0xb8a888, roughness: 1.0 })
+    );
+    pit.scale.set(p.rx, p.rz, 1);
+    pit.rotation.x = -Math.PI / 2;
+    pit.position.set(p.x, 0.03, p.z);
+    group.add(pit);
+    // Rim line
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.95, 1.02, 48),
+      materials.curvedConcrete
+    );
+    rim.scale.set(p.rx, p.rz, 1);
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.set(p.x, 0.04, p.z);
+    group.add(rim);
+    // Small bean-bag cushion inside
+    const cushion = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 16, 10),
       materials.puff
     );
-    puff.position.set(px, 0.22, pz);
-    group.add(puff);
+    cushion.scale.y = 0.55;
+    cushion.position.set(p.x + 0.3, 0.28, p.z);
+    group.add(cushion);
+  });
+
+  // ---------- Cylindrical glass garden enclosures (key motif — Perspectives 07, 09) ----------
+  // Tall transparent cylinders with trees inside, under skylights
+  const gardens = [
+    { x: -13, z: 0,   r: 1.6, h: 4.0, treeScale: 1.8 },  // main lounge centerpiece
+    { x: 20,  z: -2,  r: 1.6, h: 4.0, treeScale: 1.8 },  // study area
+    { x: 17,  z: 14,  r: 1.0, h: 3.6, treeScale: 1.3 },  // meditation
+  ];
+  gardens.forEach(g => {
+    // Glass cylinder (open top + bottom)
+    const glass = new THREE.Mesh(
+      new THREE.CylinderGeometry(g.r, g.r, g.h, 36, 1, true),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xffffff, roughness: 0.05, transmission: 0.85,
+        transparent: true, opacity: 0.18, side: THREE.DoubleSide,
+        metalness: 0.0
+      })
+    );
+    glass.position.set(g.x, g.h / 2, g.z);
+    group.add(glass);
+    // Thin top rim
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(g.r, 0.04, 8, 36),
+      materials.metal
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(g.x, g.h, g.z);
+    group.add(rim);
+    // Soil disk
+    const soil = new THREE.Mesh(
+      new THREE.CircleGeometry(g.r * 0.95, 24),
+      new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 1.0 })
+    );
+    soil.rotation.x = -Math.PI / 2;
+    soil.position.set(g.x, 0.04, g.z);
+    group.add(soil);
+    // Tree inside
+    addTree(group, g.x, 0, g.z, materials, g.treeScale);
+  });
+
+  // ---------- Curved wall bench (along the organic concrete wall) ----------
+  const benchPts = [
+    new THREE.Vector3(-30, 0, -7), new THREE.Vector3(-22, 0, -3),
+    new THREE.Vector3(-12, 0, -7), new THREE.Vector3( -4, 0,  7),
+    new THREE.Vector3(  6, 0, 10), new THREE.Vector3( 14, 0,  5),
+  ];
+  const benchCurve = new THREE.CatmullRomCurve3(benchPts, false, 'catmullrom', 0.5);
+  const benchSamples = benchCurve.getPoints(80);
+  for (let i = 0; i < benchSamples.length - 1; i++) {
+    const a = benchSamples[i], b = benchSamples[i + 1];
+    const len = a.distanceTo(b);
+    const seg = new THREE.Mesh(
+      new THREE.BoxGeometry(len + 0.02, 0.45, 0.6),
+      materials.wallWood
+    );
+    seg.position.set((a.x + b.x) / 2, 0.225, (a.z + b.z) / 2 - 0.4);
+    seg.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+    group.add(seg);
   }
 
   // Trees in spa
