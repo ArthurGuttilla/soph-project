@@ -175,6 +175,17 @@ const foamAlbedo = makeCanvas(256, 512, (ctx, w, h) => {
   }
 });
 
+// Sky gradient (zenith → horizon)
+const skyTex = makeCanvas(64, 512, (ctx, w, h) => {
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0.00, '#3d6a96');
+  grad.addColorStop(0.35, '#74a0c4');
+  grad.addColorStop(0.7,  '#bdd5e3');
+  grad.addColorStop(1.0,  '#edece4');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+});
+
 // Bracing wall (rough concrete with vertical formwork lines)
 const concreteAlbedo = makeCanvas(1024, 1024, (ctx, w, h) => {
   ctx.fillStyle = '#b5b2ac';
@@ -293,7 +304,7 @@ export function makeMaterials() {
       color: 0x4e362a, roughness: 1.0, envMapIntensity: 0.2,
     }),
     sky: new THREE.MeshBasicMaterial({
-      color: 0xb4c8d8, side: THREE.BackSide, toneMapped: false,
+      map: skyTex, side: THREE.BackSide, toneMapped: false,
     }),
     skylightGlass: new THREE.MeshPhysicalMaterial({
       color: 0xeaf4ff, roughness: 0.05, transmission: 0.95,

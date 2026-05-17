@@ -151,14 +151,41 @@ export const COLUMNS = [
 
 /**
  * Glass garden cylinders — tall transparent enclosures with trees.
- * Positioned under skylights as in Perspectives 06/07/09.
+ * Positioned under the skylights (Perspectives 06/07/09). 13 trees in
+ * the underground, one under each skylight EXCEPT the central one
+ * (which is the elevator).
  */
 export const GLASS_GARDENS = [
-  { x:   3, z:  -1, radius: 2.4, height: 4.4, treeScale: 2.2 }, // central, by stair
-  { x:  28, z:  -6, radius: 2.0, height: 4.0, treeScale: 1.8 }, // study
-  { x: -30, z:  18, radius: 1.8, height: 3.8, treeScale: 1.6 }, // atelier
-  { x:  16, z:  12, radius: 1.4, height: 3.6, treeScale: 1.3 }, // meditation
+  // NW / dance / yoga
+  { x: -30, z: -28, radius: 1.4, height: 3.6, treeScale: 1.3 },
+  { x: -18, z: -22, radius: 1.2, height: 3.4, treeScale: 1.1 },
+  { x:  -8, z: -26, radius: 1.3, height: 3.5, treeScale: 1.2 },
+  // North / admin
+  { x:  22, z: -28, radius: 1.6, height: 3.8, treeScale: 1.5 },
+  // East / study
+  { x:  28, z:  -6, radius: 2.0, height: 4.0, treeScale: 1.8 },
+  { x:  30, z:  18, radius: 1.6, height: 3.8, treeScale: 1.5 },
+  // West / atelier
+  { x: -42, z:  10, radius: 1.4, height: 3.6, treeScale: 1.3 },
+  { x: -30, z:  18, radius: 1.8, height: 3.8, treeScale: 1.6 },
+  // South / spa
+  { x: -22, z:  38, radius: 2.4, height: 4.2, treeScale: 2.0 },
+  { x:  -8, z:  44, radius: 2.6, height: 4.4, treeScale: 2.2 },
+  { x:   6, z:  38, radius: 2.0, height: 4.0, treeScale: 1.8 },
+  // SE
+  { x:  26, z:  30, radius: 1.6, height: 3.8, treeScale: 1.5 },
+  // Meditation
+  { x:  16, z:  12, radius: 1.4, height: 3.6, treeScale: 1.3 },
 ];
+
+/**
+ * Elevator shaft — at the center of the helical stair (replaces the
+ * central tree garden).
+ */
+export const ELEVATOR = {
+  x: STAIR.x, z: STAIR.z,
+  width: 2.2, depth: 2.2, height: 5.0,
+};
 
 /**
  * Sunken lounge pits — in the main lounge floor (Perspective 06).

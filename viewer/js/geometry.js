@@ -4,7 +4,7 @@ import {
   FOUNTAIN_PATHS, PARK_TREES, SPA_POOLS, SAUNAS, COLUMNS,
   GLASS_GARDENS, LOUNGE_PITS, MED_PODS, STUDY_TABLES, ROOM_ZONES,
   PAVING, INTERIOR_WALLS, CHAIRS, RECEPTION, BOOKSHELVES,
-  INTERIOR_PLANTS, SOFAS, DANCE_MIRROR,
+  INTERIOR_PLANTS, SOFAS, DANCE_MIRROR, ELEVATOR,
 } from './plan.js';
 
 // Re-export for main.js convenience
@@ -29,10 +29,22 @@ function outlineBounds(outline) {
 
 // ---------- Shape helpers ----------
 
+// IMPORTANT: ShapeGeometry lives in the XY plane. We rotate -PI/2 around X
+// to make it lie flat, which maps shape Y → world -Z. To keep world
+// coordinates consistent with everything else (which uses raw world X/Z),
+// every shape-space Y value is the NEGATED world Z.
 function shapeFromOutline(outline) {
   const s = new THREE.Shape();
-  s.moveTo(outline[0][0], outline[0][1]);
-  for (let i = 1; i < outline.length; i++) s.lineTo(outline[i][0], outline[i][1]);
+  s.moveTo(outline[0][0], -outline[0][1]);
+  for (let i = 1; i < outline.length; i++) s.lineTo(outline[i][0], -outline[i][1]);
+  s.closePath();
+  return s;
+}
+
+function shapeFromPoints(pts) {
+  const s = new THREE.Shape();
+  s.moveTo(pts[0][0], -pts[0][1]);
+  for (let i = 1; i < pts.length; i++) s.lineTo(pts[i][0], -pts[i][1]);
   s.closePath();
   return s;
 }
@@ -46,8 +58,9 @@ function addEllipseHole(shape, x, z, rx, rz, rot = 0) {
     const lz = Math.sin(t) * rz;
     const wx = x + lx * Math.cos(rot) - lz * Math.sin(rot);
     const wz = z + lx * Math.sin(rot) + lz * Math.cos(rot);
-    if (i === 0) hole.moveTo(wx, wz);
-    else hole.lineTo(wx, wz);
+    // Path Y stores -worldZ so the hole punches at the right world position.
+    if (i === 0) hole.moveTo(wx, -wz);
+    else hole.lineTo(wx, -wz);
   }
   shape.holes.push(hole);
 }
@@ -226,13 +239,9 @@ export function buildUnderground(materials) {
   group.add(floor);
 
   // ------ Spa marble floor patch (inside the spa zone) ------
-  const spaShape = new THREE.Shape();
-  const spaPts = [
+  const spaShape = shapeFromPoints([
     [-28, 32], [-26, 50], [-10, 52], [ 6, 54], [ 18, 50], [ 22, 38], [ 14, 32], [ -4, 30], [-20, 30],
-  ];
-  spaShape.moveTo(spaPts[0][0], spaPts[0][1]);
-  for (let i = 1; i < spaPts.length; i++) spaShape.lineTo(spaPts[i][0], spaPts[i][1]);
-  spaShape.closePath();
+  ]);
   // Carve pool holes
   SPA_POOLS.forEach(p => addEllipseHole(spaShape, p.x, p.z, p.rx, p.rz, p.rot));
   const spaFloorGeom = new THREE.ShapeGeometry(spaShape, 32);
@@ -336,6 +345,7 @@ export function buildUnderground(materials) {
       materials.wallWhite
     );
     rib.position.set(cx, 2.1, cz);
+    rib.userData.collidable = true;
     setShadows(rib);
     group.add(rib);
   }
@@ -352,12 +362,12 @@ export function buildUnderground(materials) {
     );
     rib.position.set(cx, 1.7, cz);
     rib.rotation.y = Math.cos(t * Math.PI * 1.5) * 0.4;
+    rib.userData.collidable = true;
     setShadows(rib);
     group.add(rib);
   }
 
   // ------ Study area: translucent stretched plastic panel ------
-  // Wavy panel along the study area
   for (let i = 0; i < 16; i++) {
     const t = i / 16;
     const ang = t * Math.PI * 1.6;
@@ -369,6 +379,8 @@ export function buildUnderground(materials) {
     );
     panel.position.set(cx, 2.1, cz);
     panel.rotation.y = Math.cos(ang) * 0.3;
+    panel.userData.collidable = true;
+    setShadows(panel);
     group.add(panel);
   }
 
@@ -401,13 +413,15 @@ export function buildUnderground(materials) {
     group.add(pod);
   });
 
-  // ------ Glass garden cylinders ------
+  // ------ Glass garden cylinders (13 trees, one under each skylight
+  //         except the central one which is the elevator) ------
   GLASS_GARDENS.forEach(g => {
     const glass = new THREE.Mesh(
       new THREE.CylinderGeometry(g.radius, g.radius, g.height, 48, 1, true),
       materials.gardenGlass
     );
     glass.position.set(g.x, g.height / 2, g.z);
+    glass.userData.collidable = true;
     group.add(glass);
     const rim = new THREE.Mesh(
       new THREE.TorusGeometry(g.radius, 0.05, 10, 48),
@@ -602,14 +616,38 @@ function buildHelicalStair(group, materials) {
     setShadows(step);
     group.add(step);
   }
-  // Central column
-  const column = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.32, 0.32, totalHeight, 24),
-    materials.curvedConcrete
+  // Central elevator shaft (replaces the solid column — glass cabin going
+  // from underground floor up through the ceiling).
+  const shaftR = 0.75;
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(shaftR, shaftR, totalHeight, 24, 1, true),
+    materials.gardenGlass
   );
-  column.position.set(x, totalHeight / 2, z);
-  setShadows(column);
-  group.add(column);
+  shaft.position.set(x, totalHeight / 2, z);
+  shaft.userData.collidable = true;
+  setShadows(shaft);
+  group.add(shaft);
+  // Cabin (a box inside the shaft at rest at the bottom)
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(shaftR * 1.4, 2.2, shaftR * 1.4),
+    materials.wallWhite
+  );
+  cabin.position.set(x, 1.1, z);
+  cabin.userData.collidable = true;
+  setShadows(cabin);
+  group.add(cabin);
+  // Cabin top trim (a darker frame)
+  const trim = new THREE.Mesh(
+    new THREE.BoxGeometry(shaftR * 1.5, 0.08, shaftR * 1.5),
+    materials.metal
+  );
+  trim.position.set(x, 2.25, z);
+  setShadows(trim);
+  group.add(trim);
+  // Subtle warm light inside cabin
+  const cabinLight = new THREE.PointLight(0xffe0a8, 0.6, 4, 1.5);
+  cabinLight.position.set(x, 2.0, z);
+  group.add(cabinLight);
 
   // Hand rail (spiral tube)
   const railPts = [];
@@ -716,10 +754,7 @@ export function buildGround(materials) {
     [[-30,  44], [-10,  56], [ 10,  56], [ 28,  50], [ 18,  38], [ -8,  34], [-26,  36]],
   ];
   grassPatches.forEach(pts => {
-    const s = new THREE.Shape();
-    s.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) s.lineTo(pts[i][0], pts[i][1]);
-    s.closePath();
+    const s = shapeFromPoints(pts);
     // Also carve any skylights that fall inside (so they show through grass too)
     SKYLIGHTS.forEach(sk => {
       if (Math.hypot(sk.x - centroidX(pts), sk.z - centroidZ(pts)) < 12) {
@@ -793,13 +828,27 @@ function centroidX(pts) { return pts.reduce((s, p) => s + p[0], 0) / pts.length;
 function centroidZ(pts) { return pts.reduce((s, p) => s + p[1], 0) / pts.length; }
 
 function buildHill(group, h, materials) {
-  // Open hemisphere, scaled vertically. Carve any skylights that pass
-  // through it as a separate disk hole.
-  const seg = 48;
-  const radSeg = 32;
+  // Open hemisphere, scaled vertically with mild vertex displacement so it
+  // doesn't read as a perfect half-sphere.
+  const seg = 56;
+  const radSeg = 36;
   const geom = new THREE.SphereGeometry(h.radius, seg, radSeg, 0, Math.PI * 2, 0, Math.PI / 2);
-  // Scale by height/radius ratio
   geom.scale(1, h.height / h.radius, 1);
+
+  // Procedural lumpiness — pseudo-random per-vertex displacement.
+  const pos = geom.attributes.position;
+  const seed = h.x * 31.7 + h.z * 13.1;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // Don't displace the bottom ring (so it sits flush with the ground)
+    if (y < 0.1) continue;
+    const n = Math.sin(x * 0.7 + seed) * Math.cos(z * 0.6 + seed * 1.3) * 0.45;
+    pos.setX(i, x + n * 0.4);
+    pos.setY(i, y + Math.abs(n) * 0.25);
+    pos.setZ(i, z + n * 0.4);
+  }
+  geom.computeVertexNormals();
+
   const mesh = new THREE.Mesh(geom, materials.hill);
   mesh.position.set(h.x, 0, h.z);
   setShadows(mesh, true, true);

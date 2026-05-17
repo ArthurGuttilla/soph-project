@@ -29,7 +29,9 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a0a);
 scene.fog = new THREE.Fog(0x141210, 30, 110);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 600);
+// 62° FOV is closer to a 35mm lens — more natural human perspective
+// than the previous 70° (which made everything feel tall/cramped).
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 600);
 camera.position.set(LAYOUT.spawn.x, LAYOUT.spawn.y, LAYOUT.spawn.z);
 
 // HDR-ish environment (RoomEnvironment is procedural, built-in)
@@ -150,9 +152,12 @@ function spawn(level) {
     camera.position.set(LAYOUT.spawn.x, 1.65, LAYOUT.spawn.z);
     controller.floorY = 0;
   } else {
-    // Spawn near the top of the access hill so they can see the park
-    camera.position.set(LAYOUT.stair.x + 12, LAYOUT.hills[0].height + 1.7, LAYOUT.stair.z + 12);
-    controller.floorY = LAYOUT.hills[0].height;
+    // Spawn AT GROUND LEVEL next to the main access hill, looking back at it.
+    // (Previously spawned on top of the hill, which left the camera locked
+    // 4.5 m above ground — too tall once you walked away from the hill.)
+    const h = LAYOUT.hills[0];
+    camera.position.set(h.x + h.radius + 6, 1.65, h.z + 2);
+    controller.floorY = 0;
   }
 }
 spawn('underground');
