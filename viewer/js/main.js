@@ -1,19 +1,41 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {
+  EffectComposer, RenderPass, EffectPass,
+  BloomEffect, SMAAEffect, SSAOEffect, VignetteEffect,
+  NormalPass, DepthDownsamplingPass, KernelSize, BlendFunction,
+} from 'postprocessing';
 import { makeMaterials } from './materials.js';
-import { buildUnderground, buildGround, LAYOUT } from './geometry.js';
+import { buildUnderground, buildGround, attachWaterFeatures, LAYOUT } from './geometry.js';
 import { FPController } from './controls.js';
+import { manager, loadHDR, loadDataTexture, onProgress } from './assets.js';
+import { buildSky } from './sky.js';
+
+// ---------- Loader UI ----------
+const ctaButton = document.getElementById('ctaButton');
+const loadBarFill = document.querySelector('#loadBar > div');
+const loadLabel = document.getElementById('loadLabel');
+let assetsReady = false;
+onProgress((loaded, total, url) => {
+  const pct = total > 0 ? (loaded / total) : 0;
+  loadBarFill.style.width = `${Math.min(100, pct * 100)}%`;
+  const name = url.split('/').pop().split('?')[0];
+  loadLabel.textContent = `Loading ${name}`;
+});
+manager.onLoad = () => {
+  assetsReady = true;
+  loadBarFill.style.width = '100%';
+  loadLabel.textContent = 'Ready';
+  ctaButton.textContent = 'Click to Enter';
+};
+manager.onError = (url) => { console.warn('Failed to load', url); };
 
 // ---------- Renderer ----------
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({
-  antialias: false,         // we use SMAA in post
+  antialias: false,
   powerPreference: 'high-performance',
+  stencil: false,
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -24,108 +46,136 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
-// ---------- Scene ----------
+// ---------- Scene + camera ----------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a0a);
-scene.fog = new THREE.Fog(0x141210, 30, 110);
+scene.background = new THREE.Color(0x141210);
+scene.fog = new THREE.Fog(0x1d1815, 30, 90);
 
-// 62° FOV is closer to a 35mm lens — more natural human perspective
-// than the previous 70° (which made everything feel tall/cramped).
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 600);
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 800);
 camera.position.set(LAYOUT.spawn.x, LAYOUT.spawn.y, LAYOUT.spawn.z);
 
-// HDR-ish environment (RoomEnvironment is procedural, built-in)
+// ---------- Environment lighting (HDR + RoomEnvironment fallback) ----------
 const pmrem = new THREE.PMREMGenerator(renderer);
-const envScene = new RoomEnvironment(renderer);
-const envTexture = pmrem.fromScene(envScene, 0.04).texture;
-scene.environment = envTexture;
+pmrem.compileEquirectangularShader();
 
-// ---------- Build levels ----------
-const materials = makeMaterials();
-const undergroundGroup = buildUnderground(materials);
-const groundGroup = buildGround(materials);
-scene.add(undergroundGroup);
-scene.add(groundGroup);
+// Procedural interior IBL — used for the underground
+const interiorEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+let exteriorEnv = interiorEnv;  // overwritten when the HDR loads
 
-// ---------- Lights ----------
-// Underground warm interior ambient
-const ambient = new THREE.AmbientLight(0xffe8d0, 0.55);
-scene.add(ambient);
+loadHDR('hdr/royal_esplanade_1k.hdr').then((hdr) => {
+  if (!hdr) return;
+  exteriorEnv = pmrem.fromEquirectangular(hdr).texture;
+  hdr.dispose();
+  if (currentLevel === 'ground') scene.environment = exteriorEnv;
+});
 
-// Park sun
-const sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
-sun.position.set(60, 100, 40);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -80;
-sun.shadow.camera.right = 80;
-sun.shadow.camera.top = 80;
-sun.shadow.camera.bottom = -80;
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 250;
-sun.shadow.bias = -0.0003;
+// ---------- Sky + sun ----------
+const { sky, sun, setSunAngle } = buildSky({
+  elevation: 32, azimuth: 145, turbidity: 5, rayleigh: 2,
+});
 scene.add(sun);
 scene.add(sun.target);
 
-// Warm point fill in underground (overall lift)
+// ---------- Lights ----------
+const ambient = new THREE.AmbientLight(0xffe8d0, 0.55);
+scene.add(ambient);
+
 const fillLight = new THREE.PointLight(0xffc88a, 0.4, 60, 1.4);
 fillLight.position.set(0, 3.5, 0);
 scene.add(fillLight);
 
-// ---------- Level switching ----------
-let currentLevel = 'underground';
+// ---------- Water normals (for Three.js Water shader) ----------
+let waterNormals = null;
+loadDataTexture('normals/waternormals.jpg', { repeat: [1, 1] }).then((tex) => {
+  waterNormals = tex;
+  if (tex) attachWaterFeatures(groundGroup, undergroundGroup, waterNormals, sun);
+});
 
+// ---------- Build levels (async — materials need awaited loaders) ----------
+let undergroundGroup, groundGroup, currentLevel = 'underground';
+
+(async () => {
+  const materials = await makeMaterials();
+  undergroundGroup = buildUnderground(materials);
+  groundGroup = buildGround(materials);
+  groundGroup.add(sky);
+  scene.add(undergroundGroup);
+  scene.add(groundGroup);
+  if (waterNormals) attachWaterFeatures(groundGroup, undergroundGroup, waterNormals, sun);
+  spawn('underground');
+})();
+
+// ---------- Post-processing ----------
+const composer = new EffectComposer(renderer, {
+  frameBufferType: THREE.HalfFloatType,
+});
+composer.addPass(new RenderPass(scene, camera));
+
+const normalPass = new NormalPass(scene, camera);
+const depthDownsamplingPass = new DepthDownsamplingPass({ normalBuffer: normalPass.texture, resolutionScale: 0.5 });
+composer.addPass(normalPass);
+composer.addPass(depthDownsamplingPass);
+
+const ssaoEffect = new SSAOEffect(camera, normalPass.texture, {
+  blendFunction: BlendFunction.MULTIPLY,
+  samples: 16,
+  rings: 4,
+  luminanceInfluence: 0.6,
+  radius: 0.15,
+  bias: 0.04,
+  intensity: 2.0,
+  fade: 0.015,
+  worldDistanceThreshold: 30,
+  worldDistanceFalloff: 5,
+  worldProximityThreshold: 0.4,
+  worldProximityFalloff: 0.1,
+});
+const bloomEffect = new BloomEffect({
+  intensity: 0.6,
+  luminanceThreshold: 0.72,
+  luminanceSmoothing: 0.2,
+  mipmapBlur: true,
+  kernelSize: KernelSize.LARGE,
+});
+const vignetteEffect = new VignetteEffect({ offset: 0.35, darkness: 0.55 });
+const smaaEffect = new SMAAEffect();
+
+composer.addPass(new EffectPass(camera, ssaoEffect));
+composer.addPass(new EffectPass(camera, bloomEffect, vignetteEffect, smaaEffect));
+
+// ---------- Level switching ----------
 function setLevel(level) {
   currentLevel = level;
   if (level === 'underground') {
-    undergroundGroup.visible = true;
-    groundGroup.visible = false;
+    if (undergroundGroup) undergroundGroup.visible = true;
+    if (groundGroup) groundGroup.visible = false;
     scene.background = new THREE.Color(0x141210);
     scene.fog = new THREE.Fog(0x1d1815, 30, 90);
+    scene.environment = interiorEnv;
     ambient.intensity = 0.55;
     ambient.color.setHex(0xffe8d0);
     fillLight.visible = true;
     sun.visible = false;
-    renderer.toneMappingExposure = 1.05;
-    bloomPass.strength = 0.6;
+    renderer.toneMappingExposure = 1.1;
+    bloomEffect.intensity = 0.55;
   } else {
-    undergroundGroup.visible = false;
-    groundGroup.visible = true;
-    scene.background = new THREE.Color(0xb6cad8);
-    scene.fog = new THREE.Fog(0xb6cad8, 80, 280);
-    ambient.intensity = 0.9;
+    if (undergroundGroup) undergroundGroup.visible = false;
+    if (groundGroup) groundGroup.visible = true;
+    scene.background = null;  // sky dome handles it
+    scene.fog = new THREE.Fog(0xb6cad8, 90, 320);
+    scene.environment = exteriorEnv;
+    ambient.intensity = 0.55;
     ambient.color.setHex(0xffffff);
     fillLight.visible = false;
     sun.visible = true;
-    renderer.toneMappingExposure = 1.0;
-    bloomPass.strength = 0.25;
+    renderer.toneMappingExposure = 0.95;
+    bloomEffect.intensity = 0.25;
   }
   document.getElementById('levelIndicator').textContent =
     level === 'underground' ? 'Underground' : 'Ground · Park';
 }
 
-// ---------- Post-processing ----------
-const composer = new EffectComposer(renderer);
-composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-composer.setSize(window.innerWidth, window.innerHeight);
-
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.6,    // strength
-  0.7,    // radius
-  0.85    // threshold
-);
-composer.addPass(bloomPass);
-
-const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
-composer.addPass(smaaPass);
-
-const outputPass = new OutputPass();
-composer.addPass(outputPass);
-
+// ---------- Resize ----------
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -138,11 +188,11 @@ const collidables = [];
 function refreshCollidables() {
   collidables.length = 0;
   const group = currentLevel === 'underground' ? undergroundGroup : groundGroup;
+  if (!group) return;
   group.traverse(obj => {
     if (obj.isMesh && obj.userData.collidable) collidables.push(obj);
   });
 }
-
 const controller = new FPController(camera, renderer.domElement, () => collidables);
 
 function spawn(level) {
@@ -152,15 +202,11 @@ function spawn(level) {
     camera.position.set(LAYOUT.spawn.x, 1.65, LAYOUT.spawn.z);
     controller.floorY = 0;
   } else {
-    // Spawn AT GROUND LEVEL next to the main access hill, looking back at it.
-    // (Previously spawned on top of the hill, which left the camera locked
-    // 4.5 m above ground — too tall once you walked away from the hill.)
     const h = LAYOUT.hills[0];
     camera.position.set(h.x + h.radius + 6, 1.65, h.z + 2);
     controller.floorY = 0;
   }
 }
-spawn('underground');
 
 controller.onInteract = () => {
   const p = camera.position;
@@ -171,11 +217,12 @@ controller.onInteract = () => {
 // Start screen
 const startScreen = document.getElementById('startScreen');
 startScreen.addEventListener('click', () => {
+  if (!assetsReady) return;
   startScreen.classList.add('hidden');
   controller.lock();
 });
 
-// ---------- Room label by proximity ----------
+// ---------- Room label + minimap ----------
 const roomLabel = document.getElementById('roomLabel');
 const prompt = document.getElementById('prompt');
 
@@ -191,7 +238,6 @@ function currentRoom() {
   return null;
 }
 
-// ---------- Minimap ----------
 const minimap = document.getElementById('minimap');
 const mctx = minimap.getContext('2d');
 
@@ -206,11 +252,9 @@ function drawMinimap() {
   mctx.clearRect(0, 0, cw, ch);
   mctx.fillStyle = 'rgba(20,20,22,0.85)';
   mctx.fillRect(0, 0, cw, ch);
-
   const toCanvas = (x, z) => [pad + (x - B.minX) * scale, pad + (z - B.minZ) * scale];
 
   if (currentLevel === 'underground') {
-    // Room zones
     mctx.lineWidth = 1.2;
     LAYOUT.rooms.forEach(r => {
       const [x0, z0] = toCanvas(r.cx - r.w/2, r.cz - r.d/2);
@@ -225,7 +269,6 @@ function drawMinimap() {
       mctx.textBaseline = 'middle';
       mctx.fillText(String(r.n), tx, tz);
     });
-    // Skylights as small dots
     LAYOUT.skylights.forEach(s => {
       const [sx, sz] = toCanvas(s.x, s.z);
       mctx.fillStyle = 'rgba(180,210,255,0.7)';
@@ -234,7 +277,6 @@ function drawMinimap() {
       mctx.fill();
     });
   } else {
-    // Hills
     mctx.fillStyle = 'rgba(120,170,90,0.55)';
     LAYOUT.hills.forEach(h => {
       const [cx, cz] = toCanvas(h.x, h.z);
@@ -242,7 +284,6 @@ function drawMinimap() {
       mctx.arc(cx, cz, h.radius * scale, 0, Math.PI * 2);
       mctx.fill();
     });
-    // Skylights
     LAYOUT.skylights.forEach(s => {
       const [sx, sz] = toCanvas(s.x, s.z);
       mctx.fillStyle = 'rgba(220,235,255,0.85)';
@@ -251,15 +292,9 @@ function drawMinimap() {
       mctx.fill();
     });
   }
-
-  // Stair indicator
   const [stx, stz] = toCanvas(LAYOUT.stair.x, LAYOUT.stair.z);
   mctx.fillStyle = '#ffd180';
-  mctx.beginPath();
-  mctx.arc(stx, stz, 5, 0, Math.PI * 2);
-  mctx.fill();
-
-  // Player
+  mctx.beginPath(); mctx.arc(stx, stz, 5, 0, Math.PI * 2); mctx.fill();
   const [px, pz] = toCanvas(camera.position.x, camera.position.z);
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
@@ -269,11 +304,8 @@ function drawMinimap() {
   mctx.rotate(ang);
   mctx.fillStyle = '#ff5c5c';
   mctx.beginPath();
-  mctx.moveTo(8, 0);
-  mctx.lineTo(-5, 5);
-  mctx.lineTo(-5, -5);
-  mctx.closePath();
-  mctx.fill();
+  mctx.moveTo(8, 0); mctx.lineTo(-5, 5); mctx.lineTo(-5, -5);
+  mctx.closePath(); mctx.fill();
   mctx.restore();
 }
 

@@ -6,6 +6,7 @@ import {
   PAVING, INTERIOR_WALLS, CHAIRS, RECEPTION, BOOKSHELVES,
   INTERIOR_PLANTS, SOFAS, DANCE_MIRROR, ELEVATOR,
 } from './plan.js';
+import { buildWaterRibbon, buildWaterPool } from './water.js';
 
 // Re-export for main.js convenience
 export const LAYOUT = {
@@ -17,6 +18,37 @@ export const LAYOUT = {
   hills: HILLS,
   spawn: { x: -6, y: 1.65, z: 2 },
 };
+
+/**
+ * Replace placeholder water meshes with real Three.js Water-shader meshes
+ * once the normal map has loaded. Called from main.js after the loader
+ * resolves. Idempotent — re-running just removes old placeholders.
+ */
+export function attachWaterFeatures(groundGroup, undergroundGroup, normalsTex, sun) {
+  if (!normalsTex) return;
+  // ---- Park fountain ribbons ----
+  if (groundGroup) {
+    const toRemove = [];
+    groundGroup.traverse(o => { if (o.userData?.placeholderWater) toRemove.push(o); });
+    toRemove.forEach(o => o.parent.remove(o));
+    FOUNTAIN_PATHS.forEach(path => {
+      const ribbon = buildWaterRibbon(path, sun, normalsTex, { width: 1.5, y: 0.14 });
+      ribbon.userData.realWater = true;
+      groundGroup.add(ribbon);
+    });
+  }
+  // ---- Spa pools ----
+  if (undergroundGroup) {
+    const toRemove = [];
+    undergroundGroup.traverse(o => { if (o.userData?.placeholderPool) toRemove.push(o); });
+    toRemove.forEach(o => o.parent.remove(o));
+    SPA_POOLS.forEach(p => {
+      const pool = buildWaterPool(p, sun, normalsTex, 0.05);
+      pool.userData.realWater = true;
+      undergroundGroup.add(pool);
+    });
+  }
+}
 
 function outlineBounds(outline) {
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -308,7 +340,8 @@ export function buildUnderground(materials) {
     group.add(cap);
   });
 
-  // ------ Spa pools (water) ------
+  // ------ Spa pools (placeholder — swapped for Three.js Water once
+  //         normal map loads, in attachWaterFeatures) ------
   SPA_POOLS.forEach(p => {
     const water = new THREE.Mesh(
       new THREE.CircleGeometry(1, 48),
@@ -317,7 +350,8 @@ export function buildUnderground(materials) {
     water.scale.set(p.rx, p.rz, 1);
     water.rotation.x = -Math.PI / 2;
     water.rotation.z = p.rot;
-    water.position.set(p.x, -0.05, p.z);
+    water.position.set(p.x, 0.05, p.z);
+    water.userData.placeholderPool = true;
     setShadows(water, false, true);
     group.add(water);
   });
@@ -814,13 +848,8 @@ export function buildGround(materials) {
   portal.position.set(STAIR.x, HILLS[0].height + 0.01, STAIR.z);
   group.add(portal);
 
-  // Sky dome (low-poly hemisphere)
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(220, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2),
-    materials.sky
-  );
-  group.add(sky);
-
+  // (Sky dome is added externally — main.js attaches the Three.js Sky
+  // shader to groundGroup, replacing the procedural hemisphere.)
   return group;
 }
 
@@ -856,9 +885,9 @@ function buildHill(group, h, materials) {
 }
 
 function buildFountain(group, path, materials) {
-  // Smooth water channel as Catmull-Rom + flat ribbon (constructed via
-  // small segmented boxes that follow the curve, with sloped concrete
-  // banks on each side).
+  // Concrete banks only — the actual water surface is swapped in by
+  // attachWaterFeatures (Three.js Water shader). We also leave a flat
+  // placeholder so the scene reads correctly before the normal map loads.
   const v3 = path.map(([x, z]) => new THREE.Vector3(x, 0, z));
   const curve = new THREE.CatmullRomCurve3(v3, false, 'catmullrom', 0.5);
   const samples = curve.getPoints(Math.max(80, path.length * 12));
@@ -871,7 +900,6 @@ function buildFountain(group, path, materials) {
     const cx = (a.x + b.x) / 2;
     const cz = (a.z + b.z) / 2;
 
-    // Bank — wider concrete edge slightly raised
     const bank = new THREE.Mesh(
       new THREE.BoxGeometry(len + 0.05, 0.18, width + bankWidth * 2),
       materials.curvedConcrete
@@ -881,15 +909,15 @@ function buildFountain(group, path, materials) {
     setShadows(bank, false, true);
     group.add(bank);
 
-    // Water surface (slightly recessed)
-    const water = new THREE.Mesh(
-      new THREE.BoxGeometry(len + 0.02, 0.08, width),
+    const placeholder = new THREE.Mesh(
+      new THREE.BoxGeometry(len + 0.02, 0.04, width),
       materials.water
     );
-    water.position.set(cx, 0.13, cz);
-    water.rotation.y = angle;
-    setShadows(water, false, true);
-    group.add(water);
+    placeholder.position.set(cx, 0.13, cz);
+    placeholder.rotation.y = angle;
+    placeholder.userData.placeholderWater = true;
+    setShadows(placeholder, false, true);
+    group.add(placeholder);
   }
 }
 

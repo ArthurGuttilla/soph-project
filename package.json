@@ -1,0 +1,17 @@
+{
+  "name": "inner-center-viewer",
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "postprocessing": "^6.36.0"
+  }
+}
