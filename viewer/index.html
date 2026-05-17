@@ -2,167 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>The Inner Center — 3D Viewer</title>
+<title>The Inner Center — redirecting…</title>
+<meta http-equiv="refresh" content="0; url=../" />
+<link rel="canonical" href="../" />
+<script>window.location.replace('../');</script>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    height: 100%;
-    background: #1a1a1a;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #fff;
-  }
-  #app { position: fixed; inset: 0; }
-  canvas { display: block; }
-
-  .overlay {
-    position: fixed;
-    pointer-events: none;
-    z-index: 10;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
-  }
-
-  #roomLabel {
-    top: 16px;
-    left: 16px;
-    font-size: 18px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-    background: rgba(0,0,0,0.35);
-    padding: 8px 14px;
-    border-radius: 4px;
-    backdrop-filter: blur(6px);
-  }
-  #levelIndicator {
-    top: 16px;
-    right: 16px;
-    font-size: 14px;
-    background: rgba(0,0,0,0.35);
-    padding: 8px 14px;
-    border-radius: 4px;
-    backdrop-filter: blur(6px);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  #prompt {
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 16px;
-    background: rgba(255,255,255,0.9);
-    color: #222;
-    padding: 10px 20px;
-    border-radius: 24px;
-    display: none;
-    text-shadow: none;
-    font-weight: 500;
-  }
-  #prompt.visible { display: block; }
-
-  #minimap {
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    width: 220px;
-    height: 220px;
-    border: 1px solid rgba(255,255,255,0.25);
-    border-radius: 6px;
-    background: rgba(0,0,0,0.45);
-    backdrop-filter: blur(6px);
-    z-index: 10;
-  }
-
-  #startScreen {
-    position: fixed;
-    inset: 0;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    cursor: pointer;
-    text-align: center;
-    padding: 40px;
-  }
-  #startScreen h1 {
-    font-size: 36px;
-    font-weight: 300;
-    margin: 0 0 8px;
-    letter-spacing: 2px;
-  }
-  #startScreen .subtitle {
-    font-size: 14px;
-    opacity: 0.6;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    margin-bottom: 32px;
-  }
-  #startScreen .controls {
-    font-size: 14px;
-    opacity: 0.7;
-    line-height: 1.8;
-    margin-bottom: 32px;
-  }
-  #startScreen .cta {
-    padding: 14px 32px;
-    border: 1px solid rgba(255,255,255,0.4);
-    border-radius: 4px;
-    font-size: 14px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    transition: background 0.2s;
-  }
-  #startScreen:hover .cta {
-    background: rgba(255,255,255,0.1);
-  }
-  #startScreen.hidden { display: none; }
-
-  #helpHint {
-    position: fixed;
-    bottom: 16px;
-    left: 16px;
-    font-size: 12px;
-    opacity: 0.55;
-    background: rgba(0,0,0,0.35);
-    padding: 6px 12px;
-    border-radius: 4px;
-    z-index: 10;
-    pointer-events: none;
-  }
+  body { font-family: -apple-system, sans-serif; background:#34464f; color:#eee;
+         display:flex; align-items:center; justify-content:center;
+         height:100vh; margin:0; }
+  a { color:#a8d4e6; }
 </style>
 </head>
 <body>
-<div id="app"></div>
-
-<div id="roomLabel" class="overlay">—</div>
-<div id="levelIndicator" class="overlay">Underground</div>
-<div id="prompt" class="overlay">Press <b>E</b> to use the stairs</div>
-<div id="helpHint">WASD to move · Mouse to look · E on stairs · ESC to release mouse</div>
-<canvas id="minimap" width="440" height="440"></canvas>
-
-<div id="startScreen">
-  <h1>The Inner Center</h1>
-  <div class="subtitle">Body &amp; Soul Connection · Graz</div>
-  <div class="controls">
-    WASD / Arrows — Move<br/>
-    Mouse — Look around<br/>
-    E — Use stairs between levels<br/>
-    ESC — Release the mouse
-  </div>
-  <div class="cta">Click to Enter</div>
-</div>
-
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }
-}
-</script>
-<script type="module" src="./js/main.js"></script>
+  <p>Redirecting to <a href="../">The Inner Center</a>…</p>
 </body>
 </html>
