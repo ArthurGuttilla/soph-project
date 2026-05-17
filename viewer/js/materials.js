@@ -305,5 +305,11 @@ export function makeMaterials() {
       transparent: true, opacity: 0.2, metalness: 0.0,
       ior: 1.5, thickness: 0.03, envMapIntensity: 1.2, side: THREE.DoubleSide,
     }),
+    mirror: new THREE.MeshStandardMaterial({
+      color: 0xe8eef2, roughness: 0.02, metalness: 1.0, envMapIntensity: 1.8,
+    }),
+    pavingStripe: new THREE.MeshStandardMaterial({
+      color: 0xbababf, roughness: 0.9, envMapIntensity: 0.3,
+    }),
   };
 }

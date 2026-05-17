@@ -3,6 +3,8 @@ import {
   SITE_OUTLINE, CEILING_HEIGHT, SKYLIGHTS, HILLS, STAIR,
   FOUNTAIN_PATHS, PARK_TREES, SPA_POOLS, SAUNAS, COLUMNS,
   GLASS_GARDENS, LOUNGE_PITS, MED_PODS, STUDY_TABLES, ROOM_ZONES,
+  PAVING, INTERIOR_WALLS, CHAIRS, RECEPTION, BOOKSHELVES,
+  INTERIOR_PLANTS, SOFAS, DANCE_MIRROR,
 } from './plan.js';
 
 // Re-export for main.js convenience
@@ -53,6 +55,136 @@ function addEllipseHole(shape, x, z, rx, rz, rot = 0) {
 function setShadows(mesh, cast = true, receive = true) {
   mesh.castShadow = cast;
   mesh.receiveShadow = receive;
+}
+
+function addChair(group, x, z, rot, materials) {
+  // Seat
+  const seat = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.05, 0.5),
+    materials.wallWhite
+  );
+  seat.position.set(x, 0.45, z);
+  seat.rotation.y = rot;
+  seat.userData.collidable = true;
+  setShadows(seat);
+  group.add(seat);
+  // Backrest
+  const back = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.55, 0.05),
+    materials.wallWhite
+  );
+  back.position.set(
+    x - Math.cos(rot) * 0.22, 0.72, z - Math.sin(rot) * 0.22
+  );
+  back.rotation.y = rot;
+  setShadows(back);
+  group.add(back);
+  // 4 legs
+  const legGeom = new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6);
+  for (let i = 0; i < 4; i++) {
+    const lx = (i % 2 === 0 ? 0.2 : -0.2);
+    const lz = (i < 2 ? 0.2 : -0.2);
+    const wx = x + lx * Math.cos(rot) - lz * Math.sin(rot);
+    const wz = z + lx * Math.sin(rot) + lz * Math.cos(rot);
+    const leg = new THREE.Mesh(legGeom, materials.metal);
+    leg.position.set(wx, 0.225, wz);
+    setShadows(leg);
+    group.add(leg);
+  }
+}
+
+function addSofa(group, s, materials) {
+  // Long puff seating
+  const seat = new THREE.Mesh(
+    new THREE.BoxGeometry(s.w, 0.45, s.d),
+    materials.puff
+  );
+  seat.position.set(s.x, 0.225, s.z);
+  seat.rotation.y = s.rot;
+  seat.userData.collidable = true;
+  setShadows(seat);
+  group.add(seat);
+  // Cushions on top
+  const ncush = Math.max(2, Math.round(s.w / 0.8));
+  for (let i = 0; i < ncush; i++) {
+    const localX = -s.w / 2 + (i + 0.5) * (s.w / ncush);
+    const cushion = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 14, 10),
+      materials.puff
+    );
+    cushion.scale.set(1, 0.5, 1);
+    cushion.position.set(
+      s.x + localX * Math.cos(s.rot),
+      0.55,
+      s.z + localX * Math.sin(s.rot)
+    );
+    setShadows(cushion);
+    group.add(cushion);
+  }
+}
+
+function addBookshelf(group, b, materials) {
+  const carcass = new THREE.Mesh(
+    new THREE.BoxGeometry(b.w, 2.6, b.d),
+    materials.wallWood
+  );
+  carcass.position.set(b.x, 1.3, b.z);
+  carcass.rotation.y = b.rot;
+  carcass.userData.collidable = true;
+  setShadows(carcass);
+  group.add(carcass);
+  // Books — variation of colored slim boxes on 4 shelves
+  const shelves = 4;
+  const colors = [0x8b3a3a, 0x3a5a8b, 0x6b8b3a, 0x8b6f3a, 0x4a4a4a, 0x9b7b3b];
+  for (let s = 0; s < shelves; s++) {
+    const y = 0.3 + s * 0.6;
+    const longSide = Math.max(b.w, b.d);
+    const nBooks = Math.floor(longSide / 0.06);
+    for (let i = 0; i < nBooks; i++) {
+      const localOff = -longSide / 2 + 0.08 + i * (longSide - 0.16) / nBooks;
+      const color = colors[(i * 7 + s * 3) % colors.length];
+      const book = new THREE.Mesh(
+        new THREE.BoxGeometry(b.w > b.d ? 0.05 : Math.max(b.w * 0.7, 0.12),
+                              0.32 + Math.random() * 0.12,
+                              b.w > b.d ? Math.max(b.d * 0.7, 0.12) : 0.05),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.9 })
+      );
+      const ox = b.w > b.d ? localOff : 0;
+      const oz = b.w > b.d ? 0 : localOff;
+      book.position.set(
+        b.x + ox * Math.cos(b.rot) - oz * Math.sin(b.rot),
+        y,
+        b.z + ox * Math.sin(b.rot) + oz * Math.cos(b.rot)
+      );
+      book.rotation.y = b.rot;
+      group.add(book);
+    }
+  }
+}
+
+function addPottedPlant(group, x, z, materials) {
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.26, 0.45, 16),
+    materials.curvedConcrete
+  );
+  pot.position.set(x, 0.225, z);
+  setShadows(pot);
+  group.add(pot);
+  // Foliage cluster
+  for (let i = 0; i < 4; i++) {
+    const r = 0.3 + Math.random() * 0.2;
+    const f = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 10, 8),
+      materials.foliage
+    );
+    f.position.set(
+      x + (Math.random() - 0.5) * 0.3,
+      0.55 + Math.random() * 0.6,
+      z + (Math.random() - 0.5) * 0.3
+    );
+    setShadows(f);
+    group.add(f);
+  }
 }
 
 function addTree(group, x, y, z, materials, scale = 1.0) {
@@ -297,6 +429,91 @@ export function buildUnderground(materials) {
     addTree(group, g.x, 0, g.z, materials, g.treeScale);
   });
 
+  // ------ Interior partition walls (curved, traced from plan) ------
+  INTERIOR_WALLS.forEach(pts => {
+    const v3 = pts.map(([x, z]) => new THREE.Vector3(x, 0, z));
+    const curve = new THREE.CatmullRomCurve3(v3, false, 'catmullrom', 0.5);
+    const samples = curve.getPoints(Math.max(40, pts.length * 8));
+    // Punch periodic 2m gaps (doorways) — every ~14 segments leave 4 segments out
+    const segPerGap = 14, gapSize = 4;
+    for (let i = 0; i < samples.length - 1; i++) {
+      const cycle = i % (segPerGap + gapSize);
+      if (cycle >= segPerGap) continue; // door opening
+      const a = samples[i], b = samples[i + 1];
+      const len = a.distanceTo(b);
+      const seg = new THREE.Mesh(
+        new THREE.BoxGeometry(len + 0.02, 3.0, 0.18),
+        materials.wallWhite
+      );
+      seg.position.set((a.x + b.x) / 2, 1.5, (a.z + b.z) / 2);
+      seg.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+      seg.userData.collidable = true;
+      setShadows(seg);
+      group.add(seg);
+    }
+  });
+
+  // ------ Reception desk (curved counter at the access zone) ------
+  {
+    const r = RECEPTION.radius;
+    const segments = 28;
+    for (let i = 0; i < segments; i++) {
+      const t = i / segments;
+      const ang = -RECEPTION.angle / 2 + t * RECEPTION.angle;
+      const cx = RECEPTION.x + Math.cos(ang) * r;
+      const cz = RECEPTION.z + Math.sin(ang) * r;
+      const seg = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 1.1, 0.6),
+        materials.wallWood
+      );
+      seg.position.set(cx, 0.55, cz);
+      seg.rotation.y = -ang + Math.PI / 2;
+      seg.userData.collidable = true;
+      setShadows(seg);
+      group.add(seg);
+    }
+    // Counter top
+    for (let i = 0; i < segments; i++) {
+      const t = i / segments;
+      const ang = -RECEPTION.angle / 2 + t * RECEPTION.angle;
+      const cx = RECEPTION.x + Math.cos(ang) * r;
+      const cz = RECEPTION.z + Math.sin(ang) * r;
+      const top = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.05, 0.6),
+        materials.floorMarble
+      );
+      top.position.set(cx, 1.13, cz);
+      top.rotation.y = -ang + Math.PI / 2;
+      setShadows(top);
+      group.add(top);
+    }
+  }
+
+  // ------ Chairs around tables ------
+  CHAIRS.forEach(c => addChair(group, c.x, c.z, c.rot, materials));
+
+  // ------ Sofas ------
+  SOFAS.forEach(s => addSofa(group, s, materials));
+
+  // ------ Bookshelves ------
+  BOOKSHELVES.forEach(b => addBookshelf(group, b, materials));
+
+  // ------ Interior potted plants ------
+  INTERIOR_PLANTS.forEach(([x, z]) => addPottedPlant(group, x, z, materials));
+
+  // ------ Dance area mirror wall ------
+  {
+    const mirror = new THREE.Mesh(
+      new THREE.BoxGeometry(DANCE_MIRROR.w, DANCE_MIRROR.h, 0.08),
+      materials.mirror
+    );
+    mirror.position.set(DANCE_MIRROR.x, DANCE_MIRROR.h / 2, DANCE_MIRROR.z);
+    mirror.rotation.y = DANCE_MIRROR.rot;
+    mirror.userData.collidable = true;
+    setShadows(mirror);
+    group.add(mirror);
+  }
+
   // ------ Lounge pits ------
   LOUNGE_PITS.forEach(p => {
     const pit = new THREE.Mesh(
@@ -520,6 +737,9 @@ export function buildGround(materials) {
   // Hills (mound geometry, also with skylight holes possibly poking through)
   HILLS.forEach(h => buildHill(group, h, materials));
 
+  // Diagonal paving stripes (railway reference, before fountains so water sits on top)
+  buildPavingStripes(group, materials);
+
   // Fountain ribbons
   FOUNTAIN_PATHS.forEach(path => buildFountain(group, path, materials));
 
@@ -587,29 +807,60 @@ function buildHill(group, h, materials) {
 }
 
 function buildFountain(group, path, materials) {
-  // Thickened ribbon following polyline.
+  // Smooth water channel as Catmull-Rom + flat ribbon (constructed via
+  // small segmented boxes that follow the curve, with sloped concrete
+  // banks on each side).
   const v3 = path.map(([x, z]) => new THREE.Vector3(x, 0, z));
   const curve = new THREE.CatmullRomCurve3(v3, false, 'catmullrom', 0.5);
-  const samples = curve.getPoints(60);
+  const samples = curve.getPoints(Math.max(80, path.length * 12));
+  const width = 1.5;
+  const bankWidth = 0.35;
   for (let i = 0; i < samples.length - 1; i++) {
     const a = samples[i], b = samples[i + 1];
     const len = a.distanceTo(b);
-    const seg = new THREE.Mesh(
-      new THREE.BoxGeometry(len + 0.02, 0.15, 1.6),
-      materials.water
-    );
-    seg.position.set((a.x + b.x) / 2, 0.08, (a.z + b.z) / 2);
-    seg.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
-    setShadows(seg, false, true);
-    group.add(seg);
-    // Concrete edge under water
-    const edge = new THREE.Mesh(
-      new THREE.BoxGeometry(len + 0.02, 0.05, 1.8),
+    const angle = -Math.atan2(b.z - a.z, b.x - a.x);
+    const cx = (a.x + b.x) / 2;
+    const cz = (a.z + b.z) / 2;
+
+    // Bank — wider concrete edge slightly raised
+    const bank = new THREE.Mesh(
+      new THREE.BoxGeometry(len + 0.05, 0.18, width + bankWidth * 2),
       materials.curvedConcrete
     );
-    edge.position.set((a.x + b.x) / 2, 0.03, (a.z + b.z) / 2);
-    edge.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
-    setShadows(edge, false, true);
-    group.add(edge);
+    bank.position.set(cx, 0.07, cz);
+    bank.rotation.y = angle;
+    setShadows(bank, false, true);
+    group.add(bank);
+
+    // Water surface (slightly recessed)
+    const water = new THREE.Mesh(
+      new THREE.BoxGeometry(len + 0.02, 0.08, width),
+      materials.water
+    );
+    water.position.set(cx, 0.13, cz);
+    water.rotation.y = angle;
+    setShadows(water, false, true);
+    group.add(water);
+  }
+}
+
+function buildPavingStripes(group, materials) {
+  // Diagonal paving stripes across the park (railway reference).
+  const angle = PAVING.angle;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  // Range to cover the trapezoid + margin
+  const diag = 140;
+  for (let i = -PAVING.stripes; i < PAVING.stripes; i++) {
+    const offset = i * 7.5;
+    const sx = -offset * sin;
+    const sz = offset * cos;
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(diag, 0.012, PAVING.width),
+      materials.pavingStripe
+    );
+    stripe.position.set(sx, 0.025, sz);
+    stripe.rotation.y = angle;
+    setShadows(stripe, false, true);
+    group.add(stripe);
   }
 }
