@@ -1,40 +1,76 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeMaterials } from './materials.js';
 import { buildUnderground, buildGround, LAYOUT } from './geometry.js';
 import { FPController } from './controls.js';
 
-// ---------- Scene setup ----------
+// ---------- Renderer ----------
 const app = document.getElementById('app');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a0a);
-scene.fog = new THREE.Fog(0x111111, 40, 120);
-
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 500);
-camera.position.set(LAYOUT.spawn.x, LAYOUT.spawn.y, LAYOUT.spawn.z);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: false,         // we use SMAA in post
+  powerPreference: 'high-performance',
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// ---------- Scene ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0a);
+scene.fog = new THREE.Fog(0x141210, 30, 110);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 600);
+camera.position.set(LAYOUT.spawn.x, LAYOUT.spawn.y, LAYOUT.spawn.z);
+
+// HDR-ish environment (RoomEnvironment is procedural, built-in)
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new RoomEnvironment(renderer);
+const envTexture = pmrem.fromScene(envScene, 0.04).texture;
+scene.environment = envTexture;
 
 // ---------- Build levels ----------
 const materials = makeMaterials();
 const undergroundGroup = buildUnderground(materials);
 const groundGroup = buildGround(materials);
-
 scene.add(undergroundGroup);
 scene.add(groundGroup);
 
-// Level switching
+// ---------- Lights ----------
+// Underground warm interior ambient
+const ambient = new THREE.AmbientLight(0xffe8d0, 0.55);
+scene.add(ambient);
+
+// Park sun
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
+sun.position.set(60, 100, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -80;
+sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80;
+sun.shadow.camera.bottom = -80;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 250;
+sun.shadow.bias = -0.0003;
+scene.add(sun);
+scene.add(sun.target);
+
+// Warm point fill in underground (overall lift)
+const fillLight = new THREE.PointLight(0xffc88a, 0.4, 60, 1.4);
+fillLight.position.set(0, 3.5, 0);
+scene.add(fillLight);
+
+// ---------- Level switching ----------
 let currentLevel = 'underground';
 
 function setLevel(level) {
@@ -42,32 +78,58 @@ function setLevel(level) {
   if (level === 'underground') {
     undergroundGroup.visible = true;
     groundGroup.visible = false;
-    scene.background = new THREE.Color(0x161412);
+    scene.background = new THREE.Color(0x141210);
     scene.fog = new THREE.Fog(0x1d1815, 30, 90);
-    // Warm interior lights
-    ambient.intensity = 0.45;
-    ambient.color.setHex(0xffe0bf);
+    ambient.intensity = 0.55;
+    ambient.color.setHex(0xffe8d0);
+    fillLight.visible = true;
     sun.visible = false;
+    renderer.toneMappingExposure = 1.05;
+    bloomPass.strength = 0.6;
   } else {
     undergroundGroup.visible = false;
     groundGroup.visible = true;
     scene.background = new THREE.Color(0xb6cad8);
-    scene.fog = new THREE.Fog(0xb6cad8, 60, 200);
-    ambient.intensity = 0.75;
+    scene.fog = new THREE.Fog(0xb6cad8, 80, 280);
+    ambient.intensity = 0.9;
     ambient.color.setHex(0xffffff);
+    fillLight.visible = false;
     sun.visible = true;
+    renderer.toneMappingExposure = 1.0;
+    bloomPass.strength = 0.25;
   }
   document.getElementById('levelIndicator').textContent =
     level === 'underground' ? 'Underground' : 'Ground · Park';
 }
 
-// ---------- Lighting ----------
-const ambient = new THREE.AmbientLight(0xffe0bf, 0.45);
-scene.add(ambient);
+// ---------- Post-processing ----------
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+composer.setSize(window.innerWidth, window.innerHeight);
 
-const sun = new THREE.DirectionalLight(0xfff4e0, 1.4);
-sun.position.set(40, 80, 30);
-scene.add(sun);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6,    // strength
+  0.7,    // radius
+  0.85    // threshold
+);
+composer.addPass(bloomPass);
+
+const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+composer.addPass(smaaPass);
+
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
 
 // ---------- Controls ----------
 const collidables = [];
@@ -81,7 +143,6 @@ function refreshCollidables() {
 
 const controller = new FPController(camera, renderer.domElement, () => collidables);
 
-// Spawn point logic
 function spawn(level) {
   setLevel(level);
   refreshCollidables();
@@ -89,22 +150,17 @@ function spawn(level) {
     camera.position.set(LAYOUT.spawn.x, 1.65, LAYOUT.spawn.z);
     controller.floorY = 0;
   } else {
-    // Spawn on top of the access hill so the player can look out
-    camera.position.set(LAYOUT.stair.x + 8, 1.65, LAYOUT.stair.z + 8);
-    controller.floorY = 0;
+    // Spawn near the top of the access hill so they can see the park
+    camera.position.set(LAYOUT.stair.x + 12, LAYOUT.hills[0].height + 1.7, LAYOUT.stair.z + 12);
+    controller.floorY = LAYOUT.hills[0].height;
   }
 }
 spawn('underground');
 
-// Interaction: stair triggers
 controller.onInteract = () => {
   const p = camera.position;
-  const dx = p.x - LAYOUT.stair.x;
-  const dz = p.z - LAYOUT.stair.z;
-  const dist = Math.hypot(dx, dz);
-  if (dist < 4.0) {
-    spawn(currentLevel === 'underground' ? 'ground' : 'underground');
-  }
+  const d = Math.hypot(p.x - LAYOUT.stair.x, p.z - LAYOUT.stair.z);
+  if (d < 5.0) spawn(currentLevel === 'underground' ? 'ground' : 'underground');
 };
 
 // Start screen
@@ -140,64 +196,63 @@ function drawMinimap() {
   const D = B.maxZ - B.minZ;
   const cw = minimap.width;
   const ch = minimap.height;
-  const pad = 16;
+  const pad = 18;
   const scale = Math.min((cw - pad * 2) / W, (ch - pad * 2) / D);
-
   mctx.clearRect(0, 0, cw, ch);
-  // Background
-  mctx.fillStyle = 'rgba(20,20,20,0.85)';
+  mctx.fillStyle = 'rgba(20,20,22,0.85)';
   mctx.fillRect(0, 0, cw, ch);
 
-  const toCanvas = (x, z) => [
-    pad + (x - B.minX) * scale,
-    pad + (z - B.minZ) * scale,
-  ];
+  const toCanvas = (x, z) => [pad + (x - B.minX) * scale, pad + (z - B.minZ) * scale];
 
   if (currentLevel === 'underground') {
-    // Rooms
-    mctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    mctx.fillStyle = 'rgba(200,180,150,0.18)';
-    mctx.lineWidth = 1.5;
+    // Room zones
+    mctx.lineWidth = 1.2;
     LAYOUT.rooms.forEach(r => {
       const [x0, z0] = toCanvas(r.cx - r.w/2, r.cz - r.d/2);
+      mctx.fillStyle = 'rgba(200,180,140,0.18)';
+      mctx.strokeStyle = 'rgba(255,255,255,0.45)';
       mctx.fillRect(x0, z0, r.w * scale, r.d * scale);
       mctx.strokeRect(x0, z0, r.w * scale, r.d * scale);
-      // number
       const [tx, tz] = toCanvas(r.cx, r.cz);
       mctx.fillStyle = 'rgba(255,255,255,0.85)';
-      mctx.font = '14px sans-serif';
+      mctx.font = '13px sans-serif';
       mctx.textAlign = 'center';
       mctx.textBaseline = 'middle';
       mctx.fillText(String(r.n), tx, tz);
-      mctx.fillStyle = 'rgba(200,180,150,0.18)';
     });
-    // Stair
-    const [sx, sz] = toCanvas(LAYOUT.stair.x, LAYOUT.stair.z);
-    mctx.fillStyle = '#ffd180';
-    mctx.beginPath();
-    mctx.arc(sx, sz, 5, 0, Math.PI * 2);
-    mctx.fill();
-  } else {
-    // Ground: hills as circles
-    mctx.fillStyle = 'rgba(120,160,100,0.5)';
-    const drawHill = (x, z, r) => {
-      const [cx, cz] = toCanvas(x, z);
+    // Skylights as small dots
+    LAYOUT.skylights.forEach(s => {
+      const [sx, sz] = toCanvas(s.x, s.z);
+      mctx.fillStyle = 'rgba(180,210,255,0.7)';
       mctx.beginPath();
-      mctx.arc(cx, cz, r * scale, 0, Math.PI * 2);
+      mctx.ellipse(sx, sz, s.rx * scale * 0.5, s.rz * scale * 0.5, s.rot, 0, Math.PI * 2);
       mctx.fill();
-    };
-    drawHill(LAYOUT.stair.x, LAYOUT.stair.z, 10);
-    drawHill(-28, -18, 6);
-    drawHill( 28, -22, 6);
-    drawHill(-30,  18, 6);
-    drawHill( 30,  20, 6);
-    // Stair portal
-    const [sx, sz] = toCanvas(LAYOUT.stair.x, LAYOUT.stair.z);
-    mctx.fillStyle = '#ffd180';
-    mctx.beginPath();
-    mctx.arc(sx, sz, 5, 0, Math.PI * 2);
-    mctx.fill();
+    });
+  } else {
+    // Hills
+    mctx.fillStyle = 'rgba(120,170,90,0.55)';
+    LAYOUT.hills.forEach(h => {
+      const [cx, cz] = toCanvas(h.x, h.z);
+      mctx.beginPath();
+      mctx.arc(cx, cz, h.radius * scale, 0, Math.PI * 2);
+      mctx.fill();
+    });
+    // Skylights
+    LAYOUT.skylights.forEach(s => {
+      const [sx, sz] = toCanvas(s.x, s.z);
+      mctx.fillStyle = 'rgba(220,235,255,0.85)';
+      mctx.beginPath();
+      mctx.ellipse(sx, sz, s.rx * scale * 0.6, s.rz * scale * 0.6, s.rot, 0, Math.PI * 2);
+      mctx.fill();
+    });
   }
+
+  // Stair indicator
+  const [stx, stz] = toCanvas(LAYOUT.stair.x, LAYOUT.stair.z);
+  mctx.fillStyle = '#ffd180';
+  mctx.beginPath();
+  mctx.arc(stx, stz, 5, 0, Math.PI * 2);
+  mctx.fill();
 
   // Player
   const [px, pz] = toCanvas(camera.position.x, camera.position.z);
@@ -207,7 +262,7 @@ function drawMinimap() {
   mctx.save();
   mctx.translate(px, pz);
   mctx.rotate(ang);
-  mctx.fillStyle = '#ff5252';
+  mctx.fillStyle = '#ff5c5c';
   mctx.beginPath();
   mctx.moveTo(8, 0);
   mctx.lineTo(-5, 5);
@@ -224,19 +279,15 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.1);
   controller.update(dt);
 
-  // Label update
   const r = currentRoom();
-  if (currentLevel === 'underground') {
-    roomLabel.textContent = r ? `${r.n}. ${r.label}` : 'The Inner Center';
-  } else {
-    roomLabel.textContent = 'The Park · Ground Floor';
-  }
+  roomLabel.textContent = currentLevel === 'underground'
+    ? (r ? `${r.n}. ${r.label}` : 'The Inner Center')
+    : 'The Park · Ground Floor';
 
-  // Stair proximity prompt
   const dx = camera.position.x - LAYOUT.stair.x;
   const dz = camera.position.z - LAYOUT.stair.z;
   const dist = Math.hypot(dx, dz);
-  if (dist < 4.0 && controller.controls.isLocked) {
+  if (dist < 5.0 && controller.controls.isLocked) {
     prompt.classList.add('visible');
     prompt.innerHTML = currentLevel === 'underground'
       ? 'Press <b>E</b> to go up to the park'
@@ -246,6 +297,6 @@ function animate() {
   }
 
   drawMinimap();
-  renderer.render(scene, camera);
+  composer.render();
 }
 animate();
